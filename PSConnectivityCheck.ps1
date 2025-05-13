@@ -66,10 +66,10 @@ try {
 $reportHeader = "
 # Connectivity Check Report
 
-### Host: $($global:localHostName)
-### User: $($global:currentUserName)
-### Date: $($global:startTime.ToString("yyyy-MM-dd HH:mm:ss"))
-### Environment Configuration: $($EnvironmentConfigFilePath)
+- Host: **$($global:localHostName)**
+- User: **$($global:currentUserName)**
+- Date: **$($global:startTime.ToString("yyyy-MM-dd HH:mm:ss"))**
+- Environment Configuration: **$($EnvironmentConfigFilePath)**
 "
 
 # Дозапись данных в файл отчета - Форматированный текст
@@ -77,15 +77,15 @@ function addTextPart2Report {
   param (
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string]$Text
+    [string]$text
   )
 
   #Создание текстового блока
   $Text = $Text.Trim()
-  $ReportMessage = "
-  $Text
+  $ReportMessage = @"
+$Text
 
-  "
+"@
   
   # Запись в файл отчета
   Add-Content -Path $global:reportFilePath -Value $ReportMessage
@@ -105,12 +105,12 @@ function addShellPart2Report {
 
   #Создание текстового блока
   $shell = $shell.Trim()
-  $ReportMessage = " 
-  ```shell
-  $shell
-  ```
+  $ReportMessage = @" 
+``````shell
+$shell
+``````
 
-  "
+"@
 
   # Запись в файл отчета
   Add-Content -Path $global:reportFilePath -Value $ReportMessage
@@ -125,6 +125,28 @@ function addShellPart2Report {
 
 # ___________________________________ Функции ______________________________________
 
+# Завершение отчета
+function finishReport {
+  param (
+    [Parameter(Mandatory=$false)]
+    [string]$text
+  )
+  
+  # Стандарт
+  addTextPart2Report -text "## Отчет завершен в $(Get-Date)" > $null
+  
+  # Доп текст
+  if ($text) {
+    addTextPart2Report -text $text > $null
+  }
+
+  # Выход из скрипта
+  exit 0
+
+}
+
+
+# Отбор необходимого теста по имени хоста
 function selectTestsByHost {
   param (
     [Parameter(Mandatory)]
@@ -135,15 +157,36 @@ function selectTestsByHost {
   $tests = @()
 
   # Сопоставляем по главному имени хоста
+  if ($envConfig.ContainsKey($localHostName)) {
+    if ($envConfig."$localHostName".ContainsKey("services")) {
+      $tests = $envConfig."$localHostName".services
+      return $tests
+    } else {
+      addTextPart2Report -text "## Что то не то с конфигурацией окружения"
+      finishReport -text "Хост $localHostName найден, но ключ *.services* не найден."
+    }
+  }
+
 
   # Сопоставляем по алиасам
 
 
   # Отдаем дефолтные тесты, если они есть.
+  if ($envConfig.ContainsKey("_default_")) {
+    if ($envConfig._default_.ContainsKey("services")) {
+      $tests = $envConfig._default_.services
+      return $tests
+    } else {
+      addTextPart2Report -text "## Что то не то с конфигурацией окружения"
+      finishReport -text "_default_ конфигурация найдена для $localHostName, но ключ *.services* не найден."
+    }
+  }
 
 
 
   # Если тестов нет, то записываем в отчет этот факт
+  addTextPart2Report -text "## Что то не то с конфигурацией окружения"
+  finishReport -text "Ничего не удалось сопоставить с данным хостом $localHostName."
  
 }
 
@@ -160,7 +203,7 @@ try {
 
 
 # Запись заголовка отчета
-addTextPart2Report -Text $reportHeader > $null
+addTextPart2Report -text $reportHeader > $null
 
 
 # Возможно стоит проверить конфигурацию на валидность
@@ -168,22 +211,30 @@ addTextPart2Report -Text $reportHeader > $null
 
 # Поиск тестов по Имени хоста или Алиасам
 $ConnectTests = selectTestsByHost -envConfig $envConfig
-# Для тестирования, Начало
-$ConnectTests = @"
-services:
-  port:
-    - 10.0.0.4:
-        - 111
-        - 444
-    - hostName: 222
-  pg:
-    - clusterName.local:5432
-  http:
-    - 10.0.0.3:80
-    - hostName: 8080
-  https:
-    - 10.0.0.4:443  
-"@
-$ConnectTests = $ConnectTests | ConvertFrom-Yaml
-# Для тестирования, Конец
+
+# Найдены тесты
+addTextPart2Report -text "## Найдены тесты для данного хоста" > $null
+$ConnectTestsString = $ConnectTests | ConvertTo-Yaml
+addShellPart2Report -shell "$ConnectTestsString" > $null
+
+
+
+# Разрешение всех DNS Имен в Тестах
+resolveAllDNSNames -ConnectTests $ConnectTests > $null
+
+
+# Проверка открытых портов
+checkOpenPorts -ConnectTests $ConnectTests > $null
+
+
+# Проверка по http протоколу
+checkHTTP -ConnectTests $ConnectTests > $null
+
+
+# Проверка по https протоколу
+checkHTTPS -ConnectTests $ConnectTests > $null
+
+
+# Завершение отчета
+finishReport > $null
 
