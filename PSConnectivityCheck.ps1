@@ -10,8 +10,7 @@
 #- Формирование отчета в формате Markdown  
 
 param(
-	
-	[Parameter(Mandatory = $false)]
+    [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
     [string]$EnvironmentConfigFilePath = ".\EnvironmentConnectivity.yaml"
 )
@@ -31,24 +30,25 @@ try {
     import-module powershell-yaml -ErrorAction:Stop
 } catch {
     Write-Host "Error: Модуль powershell-yaml не найден!" -ForegroundColor "Red"
-	Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
+    Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
     exit 1 # Выходим с ошибкой
 }
 
 # Проверка на наличие файла конфигурации
 if (-not (Test-Path -Path $EnvironmentConfigFilePath -PathType Leaf)) {
-	Write-Host "Error: Файл конфигурации $EnvironmentConfigFilePath не найден!" -ForegroundColor "Red"
-	exit 1 # Выходим с ошибкой
+    Write-Host "Error: Файл конфигурации $EnvironmentConfigFilePath не найден!" -ForegroundColor "Red"
+    exit 1 # Выходим с ошибкой
 }
 
 
 # _____________________________ Переменные и константы _____________________________
 
-$global:startTime       = Get-Date      # Время начала выполнения скрипта
-$global:localHostName   = [System.Environment]::MachineName.ToString()      # Имя хоста
-$global:currentUserName = [System.Environment]::UserName.ToString()         # Текущий пользователь
-$global:reportName      = "ConnectCheck_$($global:localHostName)_$($global:startTime.ToString("yyyyMMdd_HHmmss")).md" # Имя файла отчета
-$global:reportFilePath  = ".\$($global:reportName)"                         # Путь к файлу отчета
+$global:startTime         = Get-Date      # Время начала выполнения скрипта
+$global:localHostName     = [System.Environment]::MachineName.ToString()      # Имя хоста
+$global:currentUserName   = [System.Environment]::UserName.ToString()         # Текущий пользователь
+$global:reportName        = "ConnectCheck_$($global:localHostName)_$($global:startTime.ToString("yyyyMMdd_HHmmss")).md" # Имя файла отчета
+$global:reportFilePath    = ".\$($global:reportName)"                         # Путь к файлу отчета
+$global:supportTestTypes  = @("port","http","https")                          # Поддерживаемые типы тестов
 
 
 # ________________________________ Отчет ________________________________________
@@ -63,14 +63,14 @@ try {
 }
 
 # Заголовок отчета
-$reportHeader = "
+$reportHeader = @"
 # Connectivity Check Report
 
 - Host: **$($global:localHostName)**
 - User: **$($global:currentUserName)**
 - Date: **$($global:startTime.ToString("yyyy-MM-dd HH:mm:ss"))**
 - Environment Configuration: **$($EnvironmentConfigFilePath)**
-"
+"@
 
 # Дозапись данных в файл отчета - Форматированный текст
 function addTextPart2Report {
@@ -208,6 +208,72 @@ function selectTestsByHost {
   finishReport -text "Ничего не удалось сопоставить с данным хостом $localHostName."
  
 }
+
+
+# Разрешаем все DNS имена
+function resolveAllDNSNames {
+  param (
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [object]$ConnectTests            # Полная конфигурация окружения
+  )
+
+  addTextPart2Report -text "## Разрешение DNS имен" > $null
+
+  $dnsNames = @()
+
+  # Перебираем типы тестов и получаем все DNS имена
+  foreach ($testName in $global:supportTestTypes) {
+    if ($ConnectTests.ContainsKey($testName)) {
+      $dnsNames += $ConnectTests.$testName.Keys
+    }
+  }
+
+  # Удаляем дубликаты DNS имен
+  $dnsNames = $dnsNames | Sort-Object -Unique
+
+  # Удаляем IP адреса v4
+  $dnsNames = $dnsNames | Where-Object { $_ -notmatch '^\d+\.\d+\.\d+\.\d+$' }
+  # Удаляем IP адреса v6
+  $dnsNames = $dnsNames | Where-Object { $_ -notmatch '^::ffff:\d+\.\d+\.\d+\.\d+$' }
+
+  # Перебираем DNS имена
+  foreach ($dnsName in $dnsNames) {
+    # Разрешение
+    $resolveIPs = [System.Net.Dns]::Resolve("$dnsName").AddressList | ForEach-Object { $_.IPAddressToString }
+    # Отчет
+    addTextPart2Report -text "- DNS: $dnsName, -> IP: $($resolveIPs.ToSingle())" > $null
+  }
+
+    
+}
+
+
+
+# Проверки открытых портов
+function checkOpenPorts {
+  param (
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [object]$ConnectTests            # Полная конфигурация окружения
+  )
+
+  addTextPart2Report -text "## Проверки открытых портов" > $null
+
+  $testElements = @()   # Массив элементов для теста
+
+  if ($ConnectTests.ContainsKey("port")) {
+    # Перебираем Тесты
+    foreach ($testElement in $ConnectTests.port) {
+      
+    }
+
+  } else {
+    addTextPart2Report -text "Нет элементов типа __port__" > $null
+  }
+  
+}
+
 
 # ______________________________ Основная логика _______________________________
 

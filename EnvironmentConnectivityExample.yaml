@@ -13,7 +13,7 @@ HostBusinessName1:
       - 10.0.0.3:80
       - hostName: 8080
     https:
-      - 10.0.0.4:443
+      - github.com:443
 
 HostBusinessName2:
   alias:

@@ -73,7 +73,7 @@ HostBusinessName1:        # Основное имя хоста
       - 10.0.0.3:80
       - hostName3: 8080
     https:
-      - hostName3: 443
+      - github.com: 443
 
 ```
 
