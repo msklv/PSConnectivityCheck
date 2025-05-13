@@ -1,0 +1,29 @@
+---
+HostBusinessName1:
+  alias:
+    - Host1
+    - 10.0.0.2
+  services:
+    port:
+      - 10.0.0.4:
+          - 111
+          - 444
+      - hostName: 222
+    http:
+      - 10.0.0.3:80
+      - hostName: 8080
+    https:
+      - 10.0.0.4:443
+
+HostBusinessName2:
+  alias:
+    - Host2
+    - 10.0.0.3
+  services:
+    port:
+      - 10.0.0.4:
+          - 111
+          - 444
+      - hostName: 222
+    pg:
+      - clusterName.local:5432
