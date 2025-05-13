@@ -27,3 +27,10 @@ HostBusinessName2:
       - hostName: 222
     pg:
       - clusterName.local:5432
+
+_default_:
+  services:
+    port:
+      - hostName5:
+          - 111
+          - 444

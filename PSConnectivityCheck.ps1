@@ -1,4 +1,4 @@
-# Скрипт проверки сетевой связанности
+# Кроссплатформенный скрипт проверки сетевой связанности
 
 ## Алгоритм работы
 #- Поиск тестов по Имени хоста или Алиасам
@@ -44,5 +44,43 @@ if (-not (Test-Path -Path $EnvironmentConfigFilePath -PathType Leaf)) {
 
 # _____________________________ Переменные и константы _____________________________
 
+$global:startTime       = Get-Date      # Время начала выполнения скрипта
+$global:localHostName   = [System.Environment]::MachineName.ToString()      # Имя хоста
+$global:currentUserName = [System.Environment]::UserName.ToString()         # Текущий пользователь
+$global:reportName      = "ConnectCheck_$($global:localHostName)_$($global:startTime.ToString("yyyyMMdd_HHmmss")).md" # Имя файла отчета
+$global:reportFilePath = ".\$($global:reportName)" # Путь к файлу отчета
+
+# ________________________________ Отчет ________________________________________
+# Создание файла отчета
+try {
+    $global:reportFile = New-Item -Path $global:reportFilePath -ItemType File -Force
+} catch {
+    Write-Host "Error: Не удалось создать файл отчета $($global:reportFilePath)!" -ForegroundColor "Red"
+    Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
+    exit 1 # Выходим с ошибкой
+}
+
+# Запись заголовка в файл отчета
+$reportHeader = @"
+# ConnectCheck Report
+
+### Host: $($global:localHostName)
+### User: $($global:currentUserName)
+### Date: $($global:startTime.ToString("yyyy-MM-dd HH:mm:ss"))
+### Environment Configuration: $($EnvironmentConfigFilePath)
+
+"@
+
+# Дозапись данных в файл отчета - Форматированный текст
+
+
+# Дозапись данных в файл отчета - Исходный Код
+
 
 # ___________________________________ Функции ______________________________________
+
+
+
+
+
+# ___________
