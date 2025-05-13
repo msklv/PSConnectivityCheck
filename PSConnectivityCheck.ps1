@@ -160,6 +160,7 @@ function selectTestsByHost {
   if ($envConfig.ContainsKey($localHostName)) {
     if ($envConfig."$localHostName".ContainsKey("services")) {
       $tests = $envConfig."$localHostName".services
+      addTextPart2Report -text "Тест сопоставлен по главному имени $localHostName"
       return $tests
     } else {
       addTextPart2Report -text "## Что то не то с конфигурацией окружения"
@@ -168,13 +169,31 @@ function selectTestsByHost {
   }
 
 
-  # Сопоставляем по алиасам
-
+  # Сопоставляем по алиасам, перебираем хосты с ними
+  foreach ($configHost in $envConfig.Keys) {
+    if ($envConfig."$configHost".ContainsKey("alias")) {
+      # Перебираем алиасы
+      foreach ($alias in $envConfig."$configHost".alias) {
+        if ($alias -eq $localHostName) {
+          if ($envConfig."$configHost".ContainsKey("services")) {
+            $tests = $envConfig."$configHost".services
+            addTextPart2Report -text "Тест сопоставлен по алиасу $alias для хоста $configHost" > $null
+            return $tests
+          } else {
+            addTextPart2Report -text "## Что то не то с конфигурацией окружения"
+            finishReport -text "Конфигурация $configHost найдена, алиас $alias совпадает с хостом $localHostName, но ключ *.services* не найден."
+          }
+        }
+      }
+    }
+    
+  }
 
   # Отдаем дефолтные тесты, если они есть.
   if ($envConfig.ContainsKey("_default_")) {
     if ($envConfig._default_.ContainsKey("services")) {
       $tests = $envConfig._default_.services
+      addTextPart2Report -text "Выбран **_default_** тест"
       return $tests
     } else {
       addTextPart2Report -text "## Что то не то с конфигурацией окружения"
@@ -213,7 +232,7 @@ addTextPart2Report -text $reportHeader > $null
 $ConnectTests = selectTestsByHost -envConfig $envConfig
 
 # Найдены тесты
-addTextPart2Report -text "## Найдены тесты для данного хоста" > $null
+addTextPart2Report -text "## Тесты" > $null
 $ConnectTestsString = $ConnectTests | ConvertTo-Yaml
 addShellPart2Report -shell "$ConnectTestsString" > $null
 
