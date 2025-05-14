@@ -225,7 +225,10 @@ function resolveAllDNSNames {
   # Перебираем типы тестов и получаем все DNS имена
   foreach ($testName in $global:supportTestTypes) {
     if ($ConnectTests.ContainsKey($testName)) {
-      $dnsNames += $ConnectTests.$testName.Keys
+      foreach ($test in $ConnectTests.$testName) {
+        $dnsNames += $test.Keys
+      }
+      
     }
   }
 
@@ -235,19 +238,21 @@ function resolveAllDNSNames {
   # Удаляем IP адреса v4
   $dnsNames = $dnsNames | Where-Object { $_ -notmatch '^\d+\.\d+\.\d+\.\d+$' }
   # Удаляем IP адреса v6
-  $dnsNames = $dnsNames | Where-Object { $_ -notmatch '^::ffff:\d+\.\d+\.\d+\.\d+$' }
+  #$dnsNames = $dnsNames | Where-Object { $_ -notmatch '^::ffff:\d+\.\d+\.\d+\.\d+$' }
 
   # Перебираем DNS имена
   foreach ($dnsName in $dnsNames) {
     # Разрешение
-    $resolveIPs = [System.Net.Dns]::Resolve("$dnsName").AddressList | ForEach-Object { $_.IPAddressToString }
-    # Отчет
-    addTextPart2Report -text "- DNS: $dnsName, -> IP: $($resolveIPs.ToSingle())" > $null
+    try {
+      $resolveIPs = ([System.Net.Dns]::Resolve($dnsName)).AddressList.IPAddressToString -join ", "
+      addTextPart2Report -text "- DNS: $dnsName, -> IP: $resolveIPs" > $null
+    } catch {
+      addTextPart2Report -text "- DNS: $dnsName, -> IP: Error" > $null
+    }
+
   }
 
-    
 }
-
 
 
 # Проверки открытых портов

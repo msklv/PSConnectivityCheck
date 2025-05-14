@@ -70,7 +70,7 @@ HostBusinessName1:        # Основное имя хоста
           - 444
       - hostName2: 222   
     http:
-      - 10.0.0.3:80
+      - 10.0.0.3: 80
       - hostName3: 8080
     https:
       - github.com: 443

@@ -10,10 +10,10 @@ HostBusinessName1:
           - 444
       - hostName: 222
     http:
-      - 10.0.0.3:80
+      - 10.0.0.3: 80
       - hostName: 8080
     https:
-      - github.com:443
+      - github.com: 443
 
 HostBusinessName2:
   alias:
@@ -26,7 +26,7 @@ HostBusinessName2:
           - 444
       - hostName: 222
     pg:
-      - clusterName.local:5432
+      - clusterName.local: 5432
 
 _default_:
   services:
