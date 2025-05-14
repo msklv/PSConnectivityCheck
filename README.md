@@ -39,11 +39,12 @@
 
 ```powershell
 .
-├── yaml                        # папка с yaml модулями
-├── architecture.excalidraw     # схема архитектуры
-├── PSConnectivityCheck.ps1     # основной скрипт
+├── yaml                         # папка с yaml модулями
+├── architecture.excalidraw      # схема архитектуры
+├── PSConnectivityCheck.ps1      # основной скрипт
 ├── EnvironmentConnectivityExample.yaml  # пример конфигурации окружения
-├── ReportExample.yaml          # пример отчета
+├── EnvironmentConnectivity.yaml # файл конфигурации окружения по умолчанию
+├── Demo_ConnectCheck.md         # пример отчета
 ```
 
 ## Использование
