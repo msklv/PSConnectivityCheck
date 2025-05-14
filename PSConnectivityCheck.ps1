@@ -49,6 +49,7 @@ $global:currentUserName   = [System.Environment]::UserName.ToString()         # 
 $global:reportName        = "ConnectCheck_$($global:localHostName)_$($global:startTime.ToString("yyyyMMdd_HHmmss")).md" # Имя файла отчета
 $global:reportFilePath    = ".\$($global:reportName)"                         # Путь к файлу отчета
 $global:supportTestTypes  = @("port","http","https")                          # Поддерживаемые типы тестов
+$global:tcpTimeout        = 2000                                              # Таймаут TCP соединения в миллисекундах
 
 
 # ________________________________ Отчет ________________________________________
@@ -268,10 +269,31 @@ function checkOpenPorts {
   $testElements = @()   # Массив элементов для теста
 
   if ($ConnectTests.ContainsKey("port")) {
-    # Перебираем Тесты
+    # Превращаем тесты в список
     foreach ($testElement in $ConnectTests.port) {
-      
+      foreach ($values in $testElement.Values) {
+        # Поочереди добавляем в массив
+          foreach ($value in $values) {
+            $testElements += "$($testElement.Keys)" + ":" + "$value"
+          }  
+      }
     }
+    # Перебираем тесты
+    foreach ($testElement in $testElements) {
+      # Разделяем на хост и порт
+      $HostName, $port = $testElement -split ":"
+      # Проверяем доступность порта
+      try {
+        $tcpClient = New-Object System.Net.Sockets.TcpClient($HostName, $port)
+        if ($tcpClient.Connected) {
+          addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Open" > $null  
+          $tcpClient.Close()
+        }
+      } catch {
+        addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed" > $null
+      }
+    }
+
 
   } else {
     addTextPart2Report -text "Нет элементов типа __port__" > $null
@@ -318,11 +340,11 @@ checkOpenPorts -ConnectTests $ConnectTests > $null
 
 
 # Проверка по http протоколу
-checkHTTP -ConnectTests $ConnectTests > $null
+#checkHTTP -ConnectTests $ConnectTests > $null
 
 
 # Проверка по https протоколу
-checkHTTPS -ConnectTests $ConnectTests > $null
+#checkHTTPS -ConnectTests $ConnectTests > $null
 
 
 # Завершение отчета
