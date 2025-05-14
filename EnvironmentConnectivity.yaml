@@ -1,0 +1,22 @@
+MacBook-Pro-M1-Michael:
+  services:
+    port:
+      - 10.0.0.4:
+          - 111
+          - 444
+      - hostName: 222
+    pg:
+      - clusterName.local: 5432
+    http:
+      - petstore.swagger.io: 
+        - 80
+        - 443
+        - 8080
+      - hostName: 8080
+    https:
+      - github.com: 443
+      - huggingface.co: 
+        - 444
+        - 80
+        - 443
+    

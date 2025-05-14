@@ -326,9 +326,9 @@ function checkHTTP {
     foreach ($testElement in $ConnectTests.http) {
       foreach ($values in $testElement.Values) {
         foreach ($value in $values) {
-          $url = "$($testElement.Keys)" + ":" + "$value"
+          $url = "http://" + "$($testElement.Keys)" + ":" + "$value"
           try {
-            $response = Invoke-WebRequest -Uri $url -Method Get -Timeout $global:httpTimeout
+            $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec $($global:tcpTimeout / 1000)
             # Проверяем код ответа 2xx или 3xx - успешный
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
               addTextPart2Report -text "- HTTP: $url, Status: OK (код: $($response.StatusCode))" > $null
@@ -360,9 +360,9 @@ function checkHTTPS {
     foreach ($testElement in $ConnectTests.https) {
       foreach ($values in $testElement.Values) {
         foreach ($value in $values) {
-          $url = "$($testElement.Keys)" + ":" + "$value"
+          $url = "https://" + "$($testElement.Keys)" + ":" + "$value"
           try {
-            $response = Invoke-WebRequest -Uri $url -Method Get -Timeout $global:httpTimeout
+            $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec $($global:tcpTimeout / 1000)
             # Проверяем код ответа 2xx или 3xx - успешный
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
               addTextPart2Report -text "- HTTPS: $url, Status: OK (код: $($response.StatusCode))" > $null
