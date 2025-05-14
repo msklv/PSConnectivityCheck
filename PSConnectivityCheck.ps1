@@ -71,6 +71,7 @@ $reportHeader = @"
 - User: **$($global:currentUserName)**
 - Date: **$($global:startTime.ToString("yyyy-MM-dd HH:mm:ss"))**
 - Environment Configuration: **$($EnvironmentConfigFilePath)**
+- Connection Timeout: **$($global:tcpTimeout) ms**
 "@
 
 # Дозапись данных в файл отчета - Форматированный текст
@@ -264,7 +265,7 @@ function checkOpenPorts {
     [object]$ConnectTests            # Полная конфигурация окружения
   )
 
-  addTextPart2Report -text "## Проверки открытых портов" > $null
+  addTextPart2Report -text "## Проверки по TCP портам" > $null
 
   $testElements = @()   # Массив элементов для теста
 
@@ -282,15 +283,25 @@ function checkOpenPorts {
     foreach ($testElement in $testElements) {
       # Разделяем на хост и порт
       $HostName, $port = $testElement -split ":"
+      
       # Проверяем доступность порта
       try {
-        $tcpClient = New-Object System.Net.Sockets.TcpClient($HostName, $port)
-        if ($tcpClient.Connected) {
-          addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Open" > $null  
-          $tcpClient.Close()
-        }
+          $tcpClient = New-Object System.Net.Sockets.TcpClient
+          $task = $tcpClient.ConnectAsync($HostName, $port)
+          if ($task.Wait($global:tcpTimeout)) {
+              if ($task.IsFaulted) {
+                  addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (ошибка подключения)" > $null
+              } else {
+                  addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Open" > $null
+              }
+          } else {
+              addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (таймаут)" > $null
+          }
       } catch {
-        addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed" > $null
+          addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (исключение: $($_.Exception.Message))" > $null
+      }
+      finally {
+          if ($tcpClient) { $tcpClient.Close() }
       }
     }
 
@@ -299,6 +310,75 @@ function checkOpenPorts {
     addTextPart2Report -text "Нет элементов типа __port__" > $null
   }
   
+}
+
+# Проверки по http
+function checkHTTP {
+  param (
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [object]$ConnectTests            # Полная конфигурация окружения
+  )
+
+  addTextPart2Report -text "## Проверки по http" > $null
+
+  if ($ConnectTests.ContainsKey("http")) {
+    foreach ($testElement in $ConnectTests.http) {
+      foreach ($values in $testElement.Values) {
+        foreach ($value in $values) {
+          $url = "$($testElement.Keys)" + ":" + "$value"
+          try {
+            $response = Invoke-WebRequest -Uri $url -Method Get -Timeout $global:httpTimeout
+            # Проверяем код ответа 2xx или 3xx - успешный
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+              addTextPart2Report -text "- HTTP: $url, Status: OK (код: $($response.StatusCode))" > $null
+            } else {
+              addTextPart2Report -text "- HTTP: $url, Status: Failed (код: $($response.StatusCode))" > $null
+            }
+          } catch {
+            addTextPart2Report -text "- HTTP: $url, Status: Error (исключение: $($_.Exception.Message))" > $null
+          }
+        }
+      }
+    }
+  } else {
+    addTextPart2Report -text "Нет элементов типа __http__" > $null
+  }
+}
+
+# Проверки по https
+function checkHTTPS {
+  param (
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [object]$ConnectTests            # Полная конфигурация окружения
+  )
+
+  addTextPart2Report -text "## Проверки по https" > $null
+
+  if ($ConnectTests.ContainsKey("https")) {
+    foreach ($testElement in $ConnectTests.https) {
+      foreach ($values in $testElement.Values) {
+        foreach ($value in $values) {
+          $url = "$($testElement.Keys)" + ":" + "$value"
+          try {
+            $response = Invoke-WebRequest -Uri $url -Method Get -Timeout $global:httpTimeout
+            # Проверяем код ответа 2xx или 3xx - успешный
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+              addTextPart2Report -text "- HTTPS: $url, Status: OK (код: $($response.StatusCode))" > $null
+            } else {
+              addTextPart2Report -text "- HTTPS: $url, Status: Failed (код: $($response.StatusCode))" > $null
+            }
+          } catch {
+            addTextPart2Report -text "- HTTPS: $url, Status: Error (исключение: $($_.Exception.Message))" > $null
+          }
+        }
+      }
+    }
+  } else {
+    addTextPart2Report -text "Нет элементов типа __https__" > $null
+  }
+
 }
 
 
@@ -340,11 +420,11 @@ checkOpenPorts -ConnectTests $ConnectTests > $null
 
 
 # Проверка по http протоколу
-#checkHTTP -ConnectTests $ConnectTests > $null
+checkHTTP -ConnectTests $ConnectTests > $null
 
 
 # Проверка по https протоколу
-#checkHTTPS -ConnectTests $ConnectTests > $null
+checkHTTPS -ConnectTests $ConnectTests > $null
 
 
 # Завершение отчета
