@@ -18,6 +18,7 @@
 - Выполнение проверок в сл. порядке:
   - PORT - Открытость TCP порта
   - HTTP - Проверка протокола HTTP и кода ответа из диапазона 2xx или 3xx
+  - HTTPS - Проверка протокола HTTPS, валидация защищенного соединения и кода ответа из диапазона 2xx или 3xx
 - Формирование отчета в формате Markdown  
 
 ## Требования к среде исполнения
@@ -44,7 +45,7 @@
 ├── PSConnectivityCheck.ps1      # основной скрипт
 ├── EnvironmentConnectivityExample.yaml  # пример конфигурации окружения
 ├── EnvironmentConnectivity.yaml # файл конфигурации окружения по умолчанию
-├── Demo_ConnectCheck.md         # пример отчета
+├── DemoConnectCheckReport.md    # пример отчета
 ```
 
 ## Использование
@@ -75,12 +76,14 @@ HostBusinessName1:        # Основное имя хоста
       - hostName3: 8080
     https:
       - github.com: 443
-
+HostBusinessName2:
+  services:
+    port:
+      - huggingface.co: 443
 ```
 
 ## Что можно улучшить
 
-- HTTPS - Проверка протокола HTTPS, валидация сертификата и кода ответа из диапазона 2xx или 3xx
 - Добавить поддержку других протоколов( S3, PostgreSQL, gRPC и т.д. )
 - Загрузка файла конфигурации по http/https
 - Поддержка других форматов отчетов ( HTML, JSON и т.д. )
