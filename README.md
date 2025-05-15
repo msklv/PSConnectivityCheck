@@ -41,7 +41,6 @@
 ```powershell
 .
 ├── yaml                         # папка с yaml модулями
-├── architecture.excalidraw      # схема архитектуры
 ├── PSConnectivityCheck.ps1      # основной скрипт
 ├── EnvironmentConnectivityExample.yaml  # пример конфигурации окружения
 ├── EnvironmentConnectivity.yaml # файл конфигурации окружения по умолчанию
@@ -76,7 +75,7 @@ HostBusinessName1:        # Основное имя хоста
       - hostName3: 8080
     https:
       - github.com: 443
-HostBusinessName2:
+_default_:                # Не обязательная секция, для не сопоставленных хостов
   services:
     port:
       - huggingface.co: 443
@@ -84,10 +83,13 @@ HostBusinessName2:
 
 ## Что можно улучшить
 
-- Добавить поддержку других протоколов( S3, PostgreSQL, gRPC и т.д. )
+- Exit code в зависимости от результата, для использования в CI/CD
+- Повтор тестов N раз
 - Загрузка файла конфигурации по http/https
-- Поддержка других форматов отчетов ( HTML, JSON и т.д. )
+- Отчет в формате Allure Report (json)
+- Добавить поддержку других протоколов( S3, PostgreSQL, gRPC и т.д. )
 - В `HostBusinessName1` можно использовать Regex выражения
 - Запись респонса в отчет для анализа позже
 - Добавить поддержку UDP портов
 - Порт по умолчанию для HTTP и HTTPS
+- Централизованный запуск тестов через Ansible
