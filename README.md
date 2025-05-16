@@ -29,18 +29,18 @@
   - AstraLinux 1.7 и выше
   - MacOS 10.15 и выше
   - Windows 2012 R2 и выше
-- Powershell Module `powershell-yaml`. [Описание](yaml/readme.md)
+- Powershell Module `powershell-yaml`. [Описание](doc/readme.md)
 
 ## Архитектура
 
-![architecture](architecture.png)
-[architecture](architecture.excalidraw)
+![architecture](doc/architecture.png)
+[architecture](doc/architecture.excalidraw)
 
 ## Структура проекта
 
 ```powershell
 .
-├── yaml                         # папка с yaml модулями
+├── doc                          # папка с дополнительной документацией
 ├── PSConnectivityCheck.ps1      # основной скрипт
 ├── EnvironmentConnectivityExample.yaml  # пример конфигурации окружения
 ├── EnvironmentConnectivity.yaml # файл конфигурации окружения по умолчанию

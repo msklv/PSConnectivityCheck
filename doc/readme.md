@@ -2,11 +2,6 @@
 
 - [PowerShell YAML Module](https://www.powershellgallery.com/packages/powershell-yaml/)
 
-## offline установка модуля
-
-- [Linux](doc-install-ps-module-nix.md)
-- [Windows](doc-install-ps-module-win.md)
-
 ## Установка модуля YAML при помощи PowerShell Gallery
 
 ```powershell
