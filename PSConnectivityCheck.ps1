@@ -10,9 +10,9 @@
 #- Формирование отчета в формате Markdown  
 
 param(
-    [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$EnvironmentConfigFilePath = ".\EnvironmentConnectivity.yaml"
+  [Parameter(Mandatory = $false)]
+  [ValidateNotNullOrEmpty()]
+  [string]$EnvironmentConfigFilePath = ".\EnvironmentConnectivity.yaml"
 )
 
 
@@ -21,46 +21,118 @@ param(
 
 # Проверка версии Powershell
 if ($PSVersionTable.PSVersion.Major -lt 6) {
-    Write-Host "Error: Для работы утилиты необходим Powershell версии 6 и выше" -ForegroundColor "Red"
-    exit 1 # Выходим с ошибкой
+  Write-Host "Error: Для работы утилиты необходим Powershell версии 6 и выше" -ForegroundColor "Red"
+  exit 1 # Выходим с ошибкой
 }
 
 # Проверка на необходимые модули Powershell для работы утилиты
 try {
-    import-module powershell-yaml -ErrorAction:Stop
-} catch {
-    Write-Host "Error: Модуль powershell-yaml не найден!" -ForegroundColor "Red"
-    Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
-    exit 1 # Выходим с ошибкой
+  import-module powershell-yaml -ErrorAction:Stop
+}
+catch {
+  Write-Host "Error: Модуль powershell-yaml не найден!" -ForegroundColor "Red"
+  Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
+  exit 1 # Выходим с ошибкой
 }
 
 # Проверка на наличие файла конфигурации
 if (-not (Test-Path -Path $EnvironmentConfigFilePath -PathType Leaf)) {
-    Write-Host "Error: Файл конфигурации $EnvironmentConfigFilePath не найден!" -ForegroundColor "Red"
-    exit 1 # Выходим с ошибкой
+  Write-Host "Error: Файл конфигурации $EnvironmentConfigFilePath не найден!" -ForegroundColor "Red"
+  exit 1 # Выходим с ошибкой
 }
 
 
 # _____________________________ Переменные и константы _____________________________
 
-$global:startTime         = Get-Date      # Время начала выполнения скрипта
-$global:localHostName     = [System.Environment]::MachineName.ToString()      # Имя хоста
-$global:currentUserName   = [System.Environment]::UserName.ToString()         # Текущий пользователь
-$global:reportName        = "ConnectCheck_$($global:localHostName)_$($global:startTime.ToString("yyyyMMdd_HHmmss")).md" # Имя файла отчета
-$global:reportFilePath    = ".\$($global:reportName)"                         # Путь к файлу отчета
-$global:supportTestTypes  = @("port","http","https")                          # Поддерживаемые типы тестов
-$global:tcpTimeout        = 2000                                              # Таймаут TCP соединения в миллисекундах
+$global:startTime = Get-Date      # Время начала выполнения скрипта
+$global:localHostName = [System.Environment]::MachineName.ToString()      # Имя хоста
+$global:currentUserName = [System.Environment]::UserName.ToString()         # Текущий пользователь
+$global:reportName = "ConnectCheck_$($global:localHostName)_$($global:startTime.ToString("yyyyMMdd_HHmmss")).md" # Имя файла отчета
+$global:reportFilePath = ".\$($global:reportName)"                         # Путь к файлу отчета
+$global:supportTestTypes = @("port", "http", "https")                          # Поддерживаемые типы тестов
+$global:tcpTimeout = 2000                                              # Таймаут TCP соединения в миллисекундах
 
 
-# ________________________________ Отчет ________________________________________
+
+# _____________________________ Объекты  _____________________________
+class AllureReport {
+  # Свойства
+  [string]$Id
+  [string]$Title
+  [array]$Categories = @()
+  [bool]$Status = $true
+  [array]$Steps = @()
+
+  # Конструктор класса
+  AllureReport([string]$title) {
+    $this.Title = $title
+    $this.Id = ([guid]::NewGuid().ToString())
+    $this.Status = $false
+    $this.Steps = @()
+    $this.Categories = @("port", "http", "https") # Лучше брать из $global:supportTestTypes
+  }
+
+  # Добавление теста
+  # 1. **`name`**: Название теста (обычно соответствует имени функции или метода).
+  # 2. **`status`**: Статус теста (например, `passed`, `failed`, `skipped`).
+  # 3. **`startTime` / `endTime`**: Время начала и окончания теста для расчёта `duration`.
+  # 4. **`logs`**: Собрание логов (`log entries`), где каждый элемент содержит:
+  #    - **`message`**: Заметка/сообщение.
+  #    - **`level``:** Класс сообщения (например, `INFO`, `ERROR`).
+  # 5. **`id`**: Уникальный идентификатор теста (часто формируется из имена функции/метода или UUID).
+  # 6. **`category` / `categories` (опционально)**: Группировка по функциональным областим или процессам (可选，通常 добавляется производителем для отчетного 
+  #  разделения).
+  [void]AddStep(
+    [string]$name, 
+    [bool]$passed,
+    [DateTime]$startTime,
+    [DateTime]$endTime,
+    [string]$message,
+    [string]$category
+  ) {
+    $this.Status = $passed
+    # duration в секундах
+    $duration = ($endTime - $startTime)
+
+    $logs = @{
+      "message" = $message
+      "level"   = "INFO"
+    }
+
+    $step = @{
+      name      = $name
+      id        = $category + " / " + $name 
+      passed    = $passed
+      startTime = $startTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+      endTime   = $endTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+      duration  = $duration.TotalSeconds
+      logs      = $logs
+      category  = $category
+    }
+
+    $this.Steps += $step  # добавляем шаг в список
+
+    if (-not $passed) {
+      # Фейлим общий результат, если хотя бы один шаг не прошел.
+      $this.Status = $false
+    }
+  }
+
+  [string] ExportToJson() {
+    return $this | ConvertTo-Json -Depth 10
+  }
+}
+
+# ________________________________ Отчет Markdown ________________________________________
 
 # Создание файла отчета
 try {
-    $global:reportFile = New-Item -Path $global:reportFilePath -ItemType File -Force
-} catch {
-    Write-Host "Error: Не удалось создать файл отчета $($global:reportFilePath)!" -ForegroundColor "Red"
-    Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
-    exit 1 # Выходим с ошибкой
+  $global:reportFile = New-Item -Path $global:reportFilePath -ItemType File -Force
+}
+catch {
+  Write-Host "Error: Не удалось создать файл отчета $($global:reportFilePath)!" -ForegroundColor "Red"
+  Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
+  exit 1 # Выходим с ошибкой
 }
 
 # Заголовок отчета
@@ -130,7 +202,7 @@ $shell
 # Завершение отчета
 function finishReport {
   param (
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$text
   )
   
@@ -164,7 +236,8 @@ function selectTestsByHost {
       $tests = $envConfig."$localHostName".services
       addTextPart2Report -text "Тест сопоставлен по главному имени $localHostName"
       return $tests
-    } else {
+    }
+    else {
       addTextPart2Report -text "## Что то не то с конфигурацией окружения"
       finishReport -text "Хост $localHostName найден, но ключ *.services* не найден."
     }
@@ -181,7 +254,8 @@ function selectTestsByHost {
             $tests = $envConfig."$configHost".services
             addTextPart2Report -text "Тест сопоставлен по алиасу $alias для хоста $configHost" > $null
             return $tests
-          } else {
+          }
+          else {
             addTextPart2Report -text "## Что то не то с конфигурацией окружения"
             finishReport -text "Конфигурация $configHost найдена, алиас $alias совпадает с хостом $localHostName, но ключ *.services* не найден."
           }
@@ -197,7 +271,8 @@ function selectTestsByHost {
       $tests = $envConfig._default_.services
       addTextPart2Report -text "Выбран **_default_** тест"
       return $tests
-    } else {
+    }
+    else {
       addTextPart2Report -text "## Что то не то с конфигурацией окружения"
       finishReport -text "_default_ конфигурация найдена для $localHostName, но ключ *.services* не найден."
     }
@@ -248,7 +323,8 @@ function resolveAllDNSNames {
     try {
       $resolveIPs = ([System.Net.Dns]::Resolve($dnsName)).AddressList.IPAddressToString -join ", "
       addTextPart2Report -text "- DNS: $dnsName, -> IP: $resolveIPs" > $null
-    } catch {
+    }
+    catch {
       addTextPart2Report -text "- DNS: $dnsName, -> IP: Error" > $null
     }
 
@@ -274,9 +350,9 @@ function checkOpenPorts {
     foreach ($testElement in $ConnectTests.port) {
       foreach ($values in $testElement.Values) {
         # Поочереди добавляем в массив
-          foreach ($value in $values) {
-            $testElements += "$($testElement.Keys)" + ":" + "$value"
-          }  
+        foreach ($value in $values) {
+          $testElements += "$($testElement.Keys)" + ":" + "$value"
+        }  
       }
     }
     # Перебираем тесты
@@ -286,27 +362,31 @@ function checkOpenPorts {
       
       # Проверяем доступность порта
       try {
-          $tcpClient = New-Object System.Net.Sockets.TcpClient
-          $task = $tcpClient.ConnectAsync($HostName, $port)
-          if ($task.Wait($global:tcpTimeout)) {
-              if ($task.IsFaulted) {
-                  addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (ошибка подключения)" > $null
-              } else {
-                  addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Open" > $null
-              }
-          } else {
-              addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (таймаут)" > $null
+        $tcpClient = New-Object System.Net.Sockets.TcpClient
+        $task = $tcpClient.ConnectAsync($HostName, $port)
+        if ($task.Wait($global:tcpTimeout)) {
+          if ($task.IsFaulted) {
+            addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (ошибка подключения)" > $null
           }
-      } catch {
-          addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (исключение: $($_.Exception.Message))" > $null
+          else {
+            addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Open" > $null
+          }
+        }
+        else {
+          addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (таймаут)" > $null
+        }
+      }
+      catch {
+        addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (исключение: $($_.Exception.Message))" > $null
       }
       finally {
-          if ($tcpClient) { $tcpClient.Close() }
+        if ($tcpClient) { $tcpClient.Close() }
       }
     }
 
 
-  } else {
+  }
+  else {
     addTextPart2Report -text "Нет элементов типа __port__" > $null
   }
   
@@ -332,16 +412,19 @@ function checkHTTP {
             # Проверяем код ответа 2xx или 3xx - успешный
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
               addTextPart2Report -text "- HTTP: $url, Status: OK (код: $($response.StatusCode))" > $null
-            } else {
+            }
+            else {
               addTextPart2Report -text "- HTTP: $url, Status: Failed (код: $($response.StatusCode))" > $null
             }
-          } catch {
+          }
+          catch {
             addTextPart2Report -text "- HTTP: $url, Status: Error (исключение: $($_.Exception.Message))" > $null
           }
         }
       }
     }
-  } else {
+  }
+  else {
     addTextPart2Report -text "Нет элементов типа __http__" > $null
   }
 }
@@ -366,16 +449,19 @@ function checkHTTPS {
             # Проверяем код ответа 2xx или 3xx - успешный
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
               addTextPart2Report -text "- HTTPS: $url, Status: OK (код: $($response.StatusCode))" > $null
-            } else {
+            }
+            else {
               addTextPart2Report -text "- HTTPS: $url, Status: Failed (код: $($response.StatusCode))" > $null
             }
-          } catch {
+          }
+          catch {
             addTextPart2Report -text "- HTTPS: $url, Status: Error (исключение: $($_.Exception.Message))" > $null
           }
         }
       }
     }
-  } else {
+  }
+  else {
     addTextPart2Report -text "Нет элементов типа __https__" > $null
   }
 
@@ -386,11 +472,12 @@ function checkHTTPS {
 
 # Чтение файла конфигурации
 try {
-    $envConfig = Get-Content -Path $EnvironmentConfigFilePath -Raw -ErrorAction Stop | ConvertFrom-Yaml
-} catch {
-    Write-Host "Error: Не удалось прочитать файл конфигурации $($EnvironmentConfigFilePath)!" -ForegroundColor "Red"
-    Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
-    exit 1 # Выходим с ошибкой
+  $envConfig = Get-Content -Path $EnvironmentConfigFilePath -Raw -ErrorAction Stop | ConvertFrom-Yaml
+}
+catch {
+  Write-Host "Error: Не удалось прочитать файл конфигурации $($EnvironmentConfigFilePath)!" -ForegroundColor "Red"
+  Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
+  exit 1 # Выходим с ошибкой
 }
 
 
