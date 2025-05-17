@@ -12,7 +12,12 @@
 param(
   [Parameter(Mandatory = $false)]
   [ValidateNotNullOrEmpty()]
-  [string]$EnvironmentConfigFilePath = ".\EnvironmentConnectivity.yaml"
+  [string]$EnvironmentConfigFilePath = ".\EnvironmentConnectivity.yaml",
+
+  [Parameter(Mandatory = $false)]
+  [ValidateNotNullOrEmpty()]
+  [string]$ReportType = "Markdown"
+
 )
 
 
@@ -49,7 +54,7 @@ $global:localHostName = [System.Environment]::MachineName.ToString()      # Им
 $global:currentUserName = [System.Environment]::UserName.ToString()         # Текущий пользователь
 $global:reportName = "ConnectCheck_$($global:localHostName)_$($global:startTime.ToString("yyyyMMdd_HHmmss")).md" # Имя файла отчета
 $global:reportFilePath = ".\$($global:reportName)"                         # Путь к файлу отчета
-$global:supportTestTypes = @("port", "http", "https")                          # Поддерживаемые типы тестов
+$global:supportTestTypes = @("port", "http", "https")                        # Поддерживаемые типы тестов
 $global:tcpTimeout = 2000                                              # Таймаут TCP соединения в миллисекундах
 
 
@@ -170,6 +175,7 @@ $Text
 }
 
 # Дозапись данных в файл отчета - Исходный Код
+
 function addShellPart2Report {
   param (
     [Parameter(Mandatory = $true)]
@@ -467,6 +473,62 @@ function checkHTTPS {
 
 }
 
+# ________________________________  Режимы работы _____________________________________
+
+function MarkdownMode {
+
+  # Запись заголовка отчета в MD
+  addTextPart2Report -text $reportHeader > $null
+
+  # Поиск тестов по Имени хоста или Алиасам
+  $ConnectTests = selectTestsByHost -envConfig $envConfig
+
+  # Найдены тесты
+  addTextPart2Report -text "## Тесты" > $null
+  $ConnectTestsString = $ConnectTests | ConvertTo-Yaml
+  addShellPart2Report -shell "$ConnectTestsString" > $null
+
+  # Разрешение всех DNS Имен в Тестах
+  resolveAllDNSNames -ConnectTests $ConnectTests > $null
+
+  # Проверка открытых портов
+  checkOpenPorts -ConnectTests $ConnectTests > $null
+
+  # Проверка по http протоколу
+  checkHTTP -ConnectTests $ConnectTests > $null
+
+  # Проверка по https протоколу
+  checkHTTPS -ConnectTests $ConnectTests > $null
+
+  # Завершение отчета
+  finishReport > $null
+
+}
+
+function AllureMode {
+
+  # Создание обьекта отчета 
+
+
+  # Поиск тестов по Имени хоста или Алиасам
+
+
+  # Разрешение всех DNS Имен в Тестах
+
+
+  # Проверка открытых портов
+
+
+  # Проверка по http протоколу
+
+
+  # Проверка по https протоколу
+
+
+  # Запись отчета
+
+} 
+
 
 # ______________________________ Основная логика _______________________________
 
@@ -481,39 +543,12 @@ catch {
 }
 
 
-# Запись заголовка отчета
-addTextPart2Report -text $reportHeader > $null
+if ($ReportType = "Markdown") {
+  MarkdownMode > $null
+}
 
 
-# Возможно стоит проверить конфигурацию на валидность
-
-
-# Поиск тестов по Имени хоста или Алиасам
-$ConnectTests = selectTestsByHost -envConfig $envConfig
-
-# Найдены тесты
-addTextPart2Report -text "## Тесты" > $null
-$ConnectTestsString = $ConnectTests | ConvertTo-Yaml
-addShellPart2Report -shell "$ConnectTestsString" > $null
-
-
-
-# Разрешение всех DNS Имен в Тестах
-resolveAllDNSNames -ConnectTests $ConnectTests > $null
-
-
-# Проверка открытых портов
-checkOpenPorts -ConnectTests $ConnectTests > $null
-
-
-# Проверка по http протоколу
-checkHTTP -ConnectTests $ConnectTests > $null
-
-
-# Проверка по https протоколу
-checkHTTPS -ConnectTests $ConnectTests > $null
-
-
-# Завершение отчета
-finishReport > $null
+if ($ReportType = "Allure") {
+  AllureMode > $null
+}
 
