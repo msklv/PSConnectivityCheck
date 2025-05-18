@@ -69,8 +69,8 @@ class AllureReport {
   [array]$Steps = @()
 
   # Конструктор класса
-  AllureReport([string]$title) {
-    $this.Title = $title
+  AllureReport() {
+    $this.Title = "Connectivity Check Report"
     $this.Id = ([guid]::NewGuid().ToString())
     $this.Status = $false
     $this.Steps = @()
@@ -221,7 +221,7 @@ function finishReport {
   }
 
   # Выход из скрипта
-  exit 0
+  #exit 0
 
 }
 
@@ -507,10 +507,11 @@ function MarkdownMode {
 
 function AllureMode {
 
-  # Создание обьекта отчета 
-
-
   # Поиск тестов по Имени хоста или Алиасам
+  $ConnectTests = selectTestsByHost -envConfig $envConfig
+
+  # Создание объекта отчета
+  $AllureReport = [AllureReport]::new()
 
 
   # Разрешение всех DNS Имен в Тестах
