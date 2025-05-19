@@ -19,4 +19,18 @@ _default_:
         - 444
         - 80
         - 443
-    
+  serviceGroups:         
+    db-cluster:          
+    Exadata: WarningOnly 
+
+
+_serviceGroups_:
+  db-cluster :
+    port:
+      - db-master:
+          - 5432
+          - 5433
+      - db-slave: 5432
+  Exadata:
+    port:
+      - db-Exadata: 1251  
