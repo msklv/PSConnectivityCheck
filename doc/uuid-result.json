@@ -1,0 +1,66 @@
+{
+  "uuid": "9d95e6e7-9cf6-4ca5-91b4-9b69ce0971f8",
+  "historyId": "2b35e31882061875031701ba05a3cd67",
+  "testCaseId": "43f8868a367ff70177a99838d39c5b33",
+  "fullName": "com.example.web.essentials.AuthenticationTest.testAuthentication",
+  "name": "testAuthentication()",
+  "links": [
+    {
+      "type": "link",
+      "name": "Allure Examples",
+      "url": "https://examples.com/"
+    },
+    {
+      "type": "issue",
+      "name": "BUG-123",
+      "url": "https://bugs.example.com/BUG-123"
+    }
+  ],
+  "labels": [
+    {
+      "name": "host",
+      "value": "machine-1"
+    },
+    {
+      "name": "thread",
+      "value": "306681-MainThread"
+    },
+    {
+      "name": "language",
+      "value": "java"
+    },
+    {
+      "name": "framework",
+      "value": "junit-platform"
+    },
+    {
+      "name": "epic",
+      "value": "Web interface"
+    },
+    {
+      "name": "feature",
+      "value": "Essential features"
+    },
+    {
+      "name": "story",
+      "value": "Authentication"
+    }
+  ],
+  "status": "passed",
+  "start": 1682358426014,
+  "stop": 1682358426014,
+  "steps": [
+    {
+      "name": "Step 1",
+      "status": "passed",
+      "start": 1682358426014,
+      "stop": 1682358426014
+    },
+    {
+      "name": "Step 2",
+      "status": "passed",
+      "start": 1682358426014,
+      "stop": 1682358426014
+    }
+  ]
+}

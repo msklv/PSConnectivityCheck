@@ -1,13 +1,15 @@
 # Кроссплатформенный скрипт проверки сетевой связанности
 
 ## Алгоритм работы
-#- Поиск тестов по Имени хоста или Алиасам
-#- Разрешение DNS имен в Тестах
-#- Выполнение проверок в сл. порядке:
-#  - PORT - Открытость порта, любой протокол
-#  - HTTP - Проверка протокола HTTP и кода ответа из диапазона 2xx или 3xx
-#  - HTTPS - Проверка протокола HTTPS, валидация сертификата и кода ответа из диапазона 2xx или 3xx ( будет добавлено позже )
-#- Формирование отчета в формате Markdown  
+# - Выбор режима работы (Markdown или Allure)
+# - Чтение файла конфигурации окружения
+# - Поиск тестов по Имени хоста или Алиасам
+# - Разрешение DNS имен в Тестах
+# - Выполнение проверок в сл. порядке:
+#   - PORT - Открытость порта, любой протокол
+#   - HTTP - Проверка протокола HTTP и кода ответа из диапазона 2xx или 3xx
+#   - HTTPS - Проверка протокола HTTPS, валидация сертификата и кода ответа из диапазона 2xx или 3xx ( будет добавлено позже )
+# -  Формирование отчета в формате Markdown или Allure
 
 param(
   [Parameter(Mandatory = $false)]
@@ -15,8 +17,8 @@ param(
   [string]$EnvironmentConfigFilePath = ".\EnvironmentConnectivity.yaml",
 
   [Parameter(Mandatory = $false)]
-  [ValidateNotNullOrEmpty()]
-  [string]$ReportType = "Markdown"
+  [ValidateSet("Allure", "Markdown")]
+  [string]$ReportType = "Allure"  # Для тестов!, по умолчанию для обратной совместимости должен быть Markdown
 
 )
 
@@ -46,47 +48,55 @@ if (-not (Test-Path -Path $EnvironmentConfigFilePath -PathType Leaf)) {
   exit 1 # Выходим с ошибкой
 }
 
+# Чтение файла конфигурации с проверкой соответствия формату конвертацией YAML
+try {
+  $global:envConfig = Get-Content -Path $EnvironmentConfigFilePath -Raw -ErrorAction Stop | ConvertFrom-Yaml
+}
+catch {
+  Write-Host "Error: Не удалось прочитать файл конфигурации $($EnvironmentConfigFilePath)!" -ForegroundColor "Red"
+  Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
+  exit 1 # Выходим с ошибкой
+}
+
 
 # _____________________________ Переменные и константы _____________________________
 
 $global:startTime = Get-Date      # Время начала выполнения скрипта
-$global:localHostName = [System.Environment]::MachineName.ToString()      # Имя хоста
+$global:localHostName = [System.Environment]::MachineName.ToString()        # Имя хоста
 $global:currentUserName = [System.Environment]::UserName.ToString()         # Текущий пользователь
-$global:reportName = "ConnectCheck_$($global:localHostName)_$($global:startTime.ToString("yyyyMMdd_HHmmss")).md" # Имя файла отчета
-$global:reportFilePath = ".\$($global:reportName)"                         # Путь к файлу отчета
-$global:supportTestTypes = @("port", "http", "https")                        # Поддерживаемые типы тестов
-$global:tcpTimeout = 2000                                              # Таймаут TCP соединения в миллисекундах
+$global:supportTestTypes = @("port", "http", "https")                       # Поддерживаемые типы тестов
+$global:tcpTimeoutInMs = 2000                                               # Таймаут TCP соединения в миллисекундах
 
 
+$global:markdownReportName = "ConnectCheck_$($global:localHostName)_$($global:startTime.ToString("yyyyMMdd_HHmmss")).md" # Имя файла отчета
+$global:markdownReportFilePath = ".\$($global:markdownReportName)"                  # Путь к файлу отчета
 
 # _____________________________ Объекты  _____________________________
 class AllureReport {
-  # Свойства
-  [string]$Id
-  [string]$Title
-  [array]$Categories = @()
-  [bool]$Status = $true
-  [array]$Steps = @()
+  # https://allurereport.org/docs/how-it-works-test-result-file/
+  [string]$uuid             # Уникальный идентификатор запуска теста
+  [string]$name             # Название
+  #[string]$fullName         # Полное название теста
+  [string]$historyId        # Идентификатор для группировки тестов
+  [string]$description      # Описание в формате Markdown
+  [array]$links = @()       # Ссылки на внешние ресурсы
+  [array]$labels = @()      # Метаданные
+  [string]$status           # Possible values are: “failed”, “broken”, “passed”, “skipped”, “unknown”
+  #[string]$parameters       # Параметры
+  #[string]$stage            # Possible values are: “scheduled”, “running”, “finished”, “pending”, “interrupted”.
+  [string]$start            # Время начала
+  [string]$stop             # Время окончания 
+  [array]$steps = @()
 
   # Конструктор класса
   AllureReport() {
-    $this.Title = "Connectivity Check Report"
-    $this.Id = ([guid]::NewGuid().ToString())
-    $this.Status = $false
-    $this.Steps = @()
-    $this.Categories = @("port", "http", "https") # Лучше брать из $global:supportTestTypes
+    $this.name = "Connectivity Check Report"
+    $this.historyId = $this.name
+    $this.uuid = ([guid]::NewGuid().ToString())
+    $this.status = $false
+    $this.steps = @()
   }
 
-  # Добавление теста
-  # 1. **`name`**: Название теста (обычно соответствует имени функции или метода).
-  # 2. **`status`**: Статус теста (например, `passed`, `failed`, `skipped`).
-  # 3. **`startTime` / `endTime`**: Время начала и окончания теста для расчёта `duration`.
-  # 4. **`logs`**: Собрание логов (`log entries`), где каждый элемент содержит:
-  #    - **`message`**: Заметка/сообщение.
-  #    - **`level``:** Класс сообщения (например, `INFO`, `ERROR`).
-  # 5. **`id`**: Уникальный идентификатор теста (часто формируется из имена функции/метода или UUID).
-  # 6. **`category` / `categories` (опционально)**: Группировка по функциональным областим или процессам (可选，通常 добавляется производителем для отчетного 
-  #  разделения).
   [void]AddStep(
     [string]$name, 
     [bool]$passed,
@@ -132,10 +142,10 @@ class AllureReport {
 
 # Создание файла отчета
 try {
-  $global:reportFile = New-Item -Path $global:reportFilePath -ItemType File -Force
+  $global:reportFile = New-Item -Path $global:markdownReportFilePath -ItemType File -Force
 }
 catch {
-  Write-Host "Error: Не удалось создать файл отчета $($global:reportFilePath)!" -ForegroundColor "Red"
+  Write-Host "Error: Не удалось создать файл отчета $($global:markdownReportFilePath)!" -ForegroundColor "Red"
   Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
   exit 1 # Выходим с ошибкой
 }
@@ -148,7 +158,7 @@ $reportHeader = @"
 - User: **$($global:currentUserName)**
 - Date: **$($global:startTime.ToString("yyyy-MM-dd HH:mm:ss"))**
 - Environment Configuration: **$($EnvironmentConfigFilePath)**
-- Connection Timeout: **$($global:tcpTimeout) ms**
+- Connection Timeout: **$($global:tcpTimeoutInMs) ms**
 "@
 
 # Дозапись данных в файл отчета - Форматированный текст
@@ -167,7 +177,7 @@ $Text
 "@
   
   # Запись в файл отчета
-  Add-Content -Path $global:reportFilePath -Value $ReportMessage
+  Add-Content -Path $global:markdownReportFilePath -Value $ReportMessage
 
   # Вывод в консоль
   Write-Host $ReportMessage -ForegroundColor DarkGray
@@ -193,7 +203,7 @@ $shell
 "@
 
   # Запись в файл отчета
-  Add-Content -Path $global:reportFilePath -Value $ReportMessage
+  Add-Content -Path $global:markdownReportFilePath -Value $ReportMessage
 
   # Вывод в консоль
   Write-Host $ReportMessage -ForegroundColor DarkGray
@@ -204,6 +214,24 @@ $shell
 
 
 # ___________________________________ Функции ______________________________________
+
+# Преобразование DateTime в Unix Timestamp
+function Convert-ToUnixTimestamp {
+    param (
+        [Parameter(Mandatory = $true)]
+        [DateTime]$DateTime,
+
+        [ValidateSet("Seconds", "Milliseconds")]
+        [string]$Precision = "Seconds"
+    )
+
+    $dto = [DateTimeOffset]::new($DateTime.ToUniversalTime())
+
+    switch ($Precision) {
+        "Seconds"      { return $dto.ToUnixTimeSeconds() }
+        "Milliseconds" { return $dto.ToUnixTimeMilliseconds() }
+    }
+}
 
 # Завершение отчета
 function finishReport {
@@ -370,7 +398,7 @@ function checkOpenPorts {
       try {
         $tcpClient = New-Object System.Net.Sockets.TcpClient
         $task = $tcpClient.ConnectAsync($HostName, $port)
-        if ($task.Wait($global:tcpTimeout)) {
+        if ($task.Wait($global:tcpTimeoutInMs)) {
           if ($task.IsFaulted) {
             addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (ошибка подключения)" > $null
           }
@@ -414,7 +442,7 @@ function checkHTTP {
         foreach ($value in $values) {
           $url = "http://" + "$($testElement.Keys)" + ":" + "$value"
           try {
-            $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec $($global:tcpTimeout / 1000)
+            $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec $($global:tcpTimeoutInMs / 1000)
             # Проверяем код ответа 2xx или 3xx - успешный
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
               addTextPart2Report -text "- HTTP: $url, Status: OK (код: $($response.StatusCode))" > $null
@@ -451,7 +479,7 @@ function checkHTTPS {
         foreach ($value in $values) {
           $url = "https://" + "$($testElement.Keys)" + ":" + "$value"
           try {
-            $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec $($global:tcpTimeout / 1000)
+            $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec $($global:tcpTimeoutInMs / 1000)
             # Проверяем код ответа 2xx или 3xx - успешный
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
               addTextPart2Report -text "- HTTPS: $url, Status: OK (код: $($response.StatusCode))" > $null
@@ -531,25 +559,15 @@ function AllureMode {
 } 
 
 
-# ______________________________ Основная логика _______________________________
-
-# Чтение файла конфигурации
-try {
-  $envConfig = Get-Content -Path $EnvironmentConfigFilePath -Raw -ErrorAction Stop | ConvertFrom-Yaml
-}
-catch {
-  Write-Host "Error: Не удалось прочитать файл конфигурации $($EnvironmentConfigFilePath)!" -ForegroundColor "Red"
-  Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
-  exit 1 # Выходим с ошибкой
-}
+# ______________________________ Маршрутизатор _______________________________
 
 
-if ($ReportType = "Markdown") {
+if ($ReportType -eq "Markdown") {
   MarkdownMode > $null
 }
 
 
-if ($ReportType = "Allure") {
+if ($ReportType -eq "Allure") {
   AllureMode > $null
 }
 
