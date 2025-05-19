@@ -12,12 +12,7 @@
 param(
   [Parameter(Mandatory = $false)]
   [ValidateNotNullOrEmpty()]
-  [string]$EnvironmentConfigFilePath = ".\EnvironmentConnectivity.yaml",
-
-  [Parameter(Mandatory = $false)]
-  [ValidateNotNullOrEmpty()]
-  [string]$ReportType = "Markdown"
-
+  [string]$EnvironmentConfigFilePath = ".\EnvironmentConnectivity.yaml"
 )
 
 
@@ -58,77 +53,7 @@ $global:supportTestTypes = @("port", "http", "https")                        # �
 $global:tcpTimeout = 2000                                              # Таймаут TCP соединения в миллисекундах
 
 
-
-# _____________________________ Объекты  _____________________________
-class AllureReport {
-  # Свойства
-  [string]$Id
-  [string]$Title
-  [array]$Categories = @()
-  [bool]$Status = $true
-  [array]$Steps = @()
-
-  # Конструктор класса
-  AllureReport([string]$title) {
-    $this.Title = $title
-    $this.Id = ([guid]::NewGuid().ToString())
-    $this.Status = $false
-    $this.Steps = @()
-    $this.Categories = @("port", "http", "https") # Лучше брать из $global:supportTestTypes
-  }
-
-  # Добавление теста
-  # 1. **`name`**: Название теста (обычно соответствует имени функции или метода).
-  # 2. **`status`**: Статус теста (например, `passed`, `failed`, `skipped`).
-  # 3. **`startTime` / `endTime`**: Время начала и окончания теста для расчёта `duration`.
-  # 4. **`logs`**: Собрание логов (`log entries`), где каждый элемент содержит:
-  #    - **`message`**: Заметка/сообщение.
-  #    - **`level``:** Класс сообщения (например, `INFO`, `ERROR`).
-  # 5. **`id`**: Уникальный идентификатор теста (часто формируется из имена функции/метода или UUID).
-  # 6. **`category` / `categories` (опционально)**: Группировка по функциональным областим или процессам (可选，通常 добавляется производителем для отчетного 
-  #  разделения).
-  [void]AddStep(
-    [string]$name, 
-    [bool]$passed,
-    [DateTime]$startTime,
-    [DateTime]$endTime,
-    [string]$message,
-    [string]$category
-  ) {
-    $this.Status = $passed
-    # duration в секундах
-    $duration = ($endTime - $startTime)
-
-    $logs = @{
-      "message" = $message
-      "level"   = "INFO"
-    }
-
-    $step = @{
-      name      = $name
-      id        = $category + " / " + $name 
-      passed    = $passed
-      startTime = $startTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-      endTime   = $endTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-      duration  = $duration.TotalSeconds
-      logs      = $logs
-      category  = $category
-    }
-
-    $this.Steps += $step  # добавляем шаг в список
-
-    if (-not $passed) {
-      # Фейлим общий результат, если хотя бы один шаг не прошел.
-      $this.Status = $false
-    }
-  }
-
-  [string] ExportToJson() {
-    return $this | ConvertTo-Json -Depth 10
-  }
-}
-
-# ________________________________ Отчет Markdown ________________________________________
+# ________________________________ Отчет ________________________________________
 
 # Создание файла отчета
 try {
@@ -175,7 +100,6 @@ $Text
 }
 
 # Дозапись данных в файл отчета - Исходный Код
-
 function addShellPart2Report {
   param (
     [Parameter(Mandatory = $true)]
@@ -473,62 +397,6 @@ function checkHTTPS {
 
 }
 
-# ________________________________  Режимы работы _____________________________________
-
-function MarkdownMode {
-
-  # Запись заголовка отчета в MD
-  addTextPart2Report -text $reportHeader > $null
-
-  # Поиск тестов по Имени хоста или Алиасам
-  $ConnectTests = selectTestsByHost -envConfig $envConfig
-
-  # Найдены тесты
-  addTextPart2Report -text "## Тесты" > $null
-  $ConnectTestsString = $ConnectTests | ConvertTo-Yaml
-  addShellPart2Report -shell "$ConnectTestsString" > $null
-
-  # Разрешение всех DNS Имен в Тестах
-  resolveAllDNSNames -ConnectTests $ConnectTests > $null
-
-  # Проверка открытых портов
-  checkOpenPorts -ConnectTests $ConnectTests > $null
-
-  # Проверка по http протоколу
-  checkHTTP -ConnectTests $ConnectTests > $null
-
-  # Проверка по https протоколу
-  checkHTTPS -ConnectTests $ConnectTests > $null
-
-  # Завершение отчета
-  finishReport > $null
-
-}
-
-function AllureMode {
-
-  # Создание обьекта отчета 
-
-
-  # Поиск тестов по Имени хоста или Алиасам
-
-
-  # Разрешение всех DNS Имен в Тестах
-
-
-  # Проверка открытых портов
-
-
-  # Проверка по http протоколу
-
-
-  # Проверка по https протоколу
-
-
-  # Запись отчета
-
-} 
-
 
 # ______________________________ Основная логика _______________________________
 
@@ -543,12 +411,38 @@ catch {
 }
 
 
-if ($ReportType = "Markdown") {
-  MarkdownMode > $null
-}
+# Запись заголовка отчета
+addTextPart2Report -text $reportHeader > $null
 
 
-if ($ReportType = "Allure") {
-  AllureMode > $null
-}
+# Возможно стоит проверить конфигурацию на валидность
 
+
+# Поиск тестов по Имени хоста или Алиасам
+$ConnectTests = selectTestsByHost -envConfig $envConfig
+
+# Найдены тесты
+addTextPart2Report -text "## Тесты" > $null
+$ConnectTestsString = $ConnectTests | ConvertTo-Yaml
+addShellPart2Report -shell "$ConnectTestsString" > $null
+
+
+
+# Разрешение всех DNS Имен в Тестах
+resolveAllDNSNames -ConnectTests $ConnectTests > $null
+
+
+# Проверка открытых портов
+checkOpenPorts -ConnectTests $ConnectTests > $null
+
+
+# Проверка по http протоколу
+checkHTTP -ConnectTests $ConnectTests > $null
+
+
+# Проверка по https протоколу
+checkHTTPS -ConnectTests $ConnectTests > $null
+
+
+# Завершение отчета
+finishReport > $null
