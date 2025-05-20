@@ -1,7 +1,9 @@
 # Кроссплатформенный скрипт проверки сетевой связанности
 
 ## Алгоритм работы
+#- Чтение файла конфигурации
 #- Поиск тестов по Имени хоста или Алиасам
+#- Сборка итоговых тестов из сервисов
 #- Разрешение DNS имен в Тестах
 #- Выполнение проверок в сл. порядке:
 #  - PORT - Открытость порта, любой протокол
@@ -40,6 +42,18 @@ if (-not (Test-Path -Path $EnvironmentConfigFilePath -PathType Leaf)) {
   Write-Host "Error: Файл конфигурации $EnvironmentConfigFilePath не найден!" -ForegroundColor "Red"
   exit 1 # Выходим с ошибкой
 }
+
+# Чтение файла конфигурации и преобразование в объект
+try {
+  $envConfig = Get-Content -Path $EnvironmentConfigFilePath -Raw -ErrorAction Stop | ConvertFrom-Yaml
+}
+catch {
+  Write-Host "Error: Не удалось прочитать файл конфигурации $($EnvironmentConfigFilePath)!" -ForegroundColor "Red"
+  Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
+  exit 1 # Выходим с ошибкой
+}
+
+# Возможно стоит проверить наличие всех используемых сервисов в конфигурации.
 
 
 # _____________________________ Переменные и константы _____________________________
@@ -149,9 +163,66 @@ function finishReport {
 
 }
 
+# Подготовка конфигурации по главному имени хоста
+# Возврат - конфигурация тестов
+function prepareConfigByHostName {
+  param (
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [object]$envConfig,            # Полная конфигурация тестирования сетевой связанности
+
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [string]$HostName             # Имя хоста
+  )
+
+  $tests = @()   # Массив элементов для теста
+
+  # Проверяем наличие ключа Хоста
+  if (-not ($envConfig.ContainsKey($HostName))) {
+    return $tests
+  }
+
+  # Проверяем наличие ключа services
+  if ($envConfig."$HostName".ContainsKey("services")) {
+    # Берем блок services
+    $tests += $envConfig."$HostName".services
+    # Перебираем тесты
+    addTextPart2Report -text "Тест сопоставлен по  имени $HostName, добавлен блок services $($tests.Count) элементов" > $null
+  }
+
+
+  # Добавляем тесты из блока serviceGroups
+  if ($envConfig."$HostName".ContainsKey("serviceGroups")) {
+    foreach ($serviceGroupName in $envConfig."$HostName".serviceGroups.Keys) {
+      # Проверяем наличие ключа _serviceGroups_
+      if ( -not ($envConfig.ContainsKey("_serviceGroups_"))) {
+        addTextPart2Report -text "## Что то не то с конфигурацией тестирования"
+        finishReport -text "Блок _serviceGroups_ не найден в конфигурации."
+      }
+      # Проверяем наличие ключа serviceGroupName
+      if ($envConfig._serviceGroups_.ContainsKey($serviceGroupName)) {
+        # Непосредственно добавляем тесты из блока serviceGroups
+        $tests += $envConfig._serviceGroups_."$serviceGroupName"
+        addTextPart2Report -text "Тест сопоставлен по  имени $HostName, добавлен блок serviceGroups, итого $($tests.Count) элементов" > $null
+      }
+      else {
+        addTextPart2Report -text "## Что то не то с конфигурацией тестирования"
+        finishReport -text "Конфигурация _serviceGroups_ найдена, но сервис группа $serviceGroupName не найдена."
+      }
+    }
+  }
+  
+
+
+  # Возвращаем найденные тесты или пустой массив
+  return $tests
+
+}
+
 
 # Отбор необходимого теста по имени хоста
-function selectTestsByHost {
+function selectConnectivityTests {
   param (
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
@@ -161,51 +232,35 @@ function selectTestsByHost {
   $tests = @()
 
   # Сопоставляем по главному имени хоста
-  if ($envConfig.ContainsKey($localHostName)) {
-    if ($envConfig."$localHostName".ContainsKey("services")) {
-      $tests = $envConfig."$localHostName".services
-      addTextPart2Report -text "Тест сопоставлен по главному имени $localHostName"
-      return $tests
-    }
-    else {
-      addTextPart2Report -text "## Что то не то с конфигурацией окружения"
-      finishReport -text "Хост $localHostName найден, но ключ *.services* не найден."
-    }
-  }
+  $tests = prepareConfigByHostName -envConfig $envConfig -HostName $localHostName
+  if ($tests) { return $tests } # Если тесты найдены, то возвращаем их
 
 
   # Сопоставляем по алиасам, перебираем хосты с ними
+  # Перебираем все хосты в конфигурации
   foreach ($configHost in $envConfig.Keys) {
-    if ($envConfig."$configHost".ContainsKey("alias")) {
-      # Перебираем алиасы
-      foreach ($alias in $envConfig."$configHost".alias) {
-        if ($alias -eq $localHostName) {
-          if ($envConfig."$configHost".ContainsKey("services")) {
-            $tests = $envConfig."$configHost".services
-            addTextPart2Report -text "Тест сопоставлен по алиасу $alias для хоста $configHost" > $null
-            return $tests
-          }
-          else {
-            addTextPart2Report -text "## Что то не то с конфигурацией окружения"
-            finishReport -text "Конфигурация $configHost найдена, алиас $alias совпадает с хостом $localHostName, но ключ *.services* не найден."
-          }
-        }
+    if (-not ($envConfig."$configHost".ContainsKey("alias"))) {
+      continue # Если алиасов нет, то пропускаем
+    }
+
+    # Перебираем алиасы для обрабатываемого хоста
+    foreach ($alias in $envConfig."$configHost".alias) {
+      if ($alias -eq $localHostName) {
+          addTextPart2Report -text "Тест сопоставлен по алиасу $alias для хоста $configHost" > $null
+          $tests = prepareConfigByHostName -envConfig $envConfig -HostName $configHost
+          if ($tests) { return $tests } # Если тесты найдены, то возвращаем их
       }
     }
     
   }
 
+
+
   # Отдаем дефолтные тесты, если они есть.
   if ($envConfig.ContainsKey("_default_")) {
-    if ($envConfig._default_.ContainsKey("services")) {
-      $tests = $envConfig._default_.services
-      addTextPart2Report -text "Выбран **_default_** тест"
-      return $tests
-    }
-    else {
-      addTextPart2Report -text "## Что то не то с конфигурацией окружения"
-      finishReport -text "_default_ конфигурация найдена для $localHostName, но ключ *.services* не найден."
-    }
+    $tests = prepareConfigByHostName -envConfig $envConfig -HostName "_default_"
+    addTextPart2Report -text "Выбран **_default_** тест"
+    if ($tests) { return $tests } # Если тесты найдены, то возвращаем их
   }
 
 
@@ -400,26 +455,13 @@ function checkHTTPS {
 
 # ______________________________ Основная логика _______________________________
 
-# Чтение файла конфигурации
-try {
-  $envConfig = Get-Content -Path $EnvironmentConfigFilePath -Raw -ErrorAction Stop | ConvertFrom-Yaml
-}
-catch {
-  Write-Host "Error: Не удалось прочитать файл конфигурации $($EnvironmentConfigFilePath)!" -ForegroundColor "Red"
-  Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
-  exit 1 # Выходим с ошибкой
-}
-
 
 # Запись заголовка отчета
 addTextPart2Report -text $reportHeader > $null
 
 
-# Возможно стоит проверить конфигурацию на валидность
-
-
 # Поиск тестов по Имени хоста или Алиасам
-$ConnectTests = selectTestsByHost -envConfig $envConfig
+$ConnectTests = selectConnectivityTests -envConfig $envConfig
 
 # Найдены тесты
 addTextPart2Report -text "## Тесты" > $null
