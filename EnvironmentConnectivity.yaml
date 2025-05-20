@@ -21,7 +21,7 @@ _default_:
         - 443
   serviceGroups:         
     db-cluster:          
-    Exadata: WarningOnly 
+    Exadata: 
 
 
 _serviceGroups_:
