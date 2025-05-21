@@ -1,8 +1,8 @@
 _default_:
   services:
     port:
-      - 10.0.0.4:
-          - 111
+      - 1.1.1.1:
+          - 53
           - 444
       - hostName: 222
     pg:
