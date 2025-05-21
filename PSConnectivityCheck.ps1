@@ -44,18 +44,6 @@ if (-not (Test-Path -Path $EnvironmentConfigFilePath -PathType Leaf)) {
   exit 1 # Выходим с ошибкой
 }
 
-# Чтение файла конфигурации и преобразование в объект
-try {
-  [hashtable]$envConfig = Get-Content -Path $EnvironmentConfigFilePath -Raw -ErrorAction Stop | ConvertFrom-Yaml
-}
-catch {
-  Write-Host "Error: Не удалось прочитать файл конфигурации $($EnvironmentConfigFilePath)!" -ForegroundColor "Red"
-  Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
-  exit 1 # Выходим с ошибкой
-}
-
-# Возможно стоит проверить наличие всех используемых сервисов в конфигурации.
-
 
 # _____________________________ Переменные и константы _____________________________
 
@@ -508,6 +496,18 @@ function checkHTTPS {
 
 
 # ______________________________ Основная логика _______________________________
+
+# Чтение файла конфигурации и преобразование в объект
+try {
+  [hashtable]$envConfig = Get-Content -Path $EnvironmentConfigFilePath -Raw -ErrorAction Stop | ConvertFrom-Yaml
+}
+catch {
+  Write-Host "Error: Не удалось прочитать файл конфигурации $($EnvironmentConfigFilePath)!" -ForegroundColor "Red"
+  Write-Host "  ${($_.Exception.Message)}" -ForegroundColor DarkGray
+  exit 1 # Выходим с ошибкой
+}
+
+# Возможно стоит проверить наличие всех используемых сервисов в конфигурации.
 
 
 # Запись заголовка отчета
