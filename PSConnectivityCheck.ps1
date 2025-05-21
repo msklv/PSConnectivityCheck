@@ -1,7 +1,10 @@
 # Кроссплатформенный скрипт проверки сетевой связанности
+# v0.2 
 
 ## Алгоритм работы
+#- Чтение файла конфигурации
 #- Поиск тестов по Имени хоста или Алиасам
+#- Сборка итоговых тестов из сервисов
 #- Разрешение DNS имен в Тестах
 #- Выполнение проверок в сл. порядке:
 #  - PORT - Открытость порта, любой протокол
@@ -12,12 +15,7 @@
 param(
   [Parameter(Mandatory = $false)]
   [ValidateNotNullOrEmpty()]
-  [string]$EnvironmentConfigFilePath = ".\EnvironmentConnectivity.yaml",
-
-  [Parameter(Mandatory = $false)]
-  [ValidateNotNullOrEmpty()]
-  [string]$ReportType = "Markdown"
-
+  [string]$EnvironmentConfigFilePath = ".\EnvironmentConnectivity.yaml"
 )
 
 
@@ -58,77 +56,7 @@ $global:supportTestTypes = @("port", "http", "https")                        # �
 $global:tcpTimeout = 2000                                              # Таймаут TCP соединения в миллисекундах
 
 
-
-# _____________________________ Объекты  _____________________________
-class AllureReport {
-  # Свойства
-  [string]$Id
-  [string]$Title
-  [array]$Categories = @()
-  [bool]$Status = $true
-  [array]$Steps = @()
-
-  # Конструктор класса
-  AllureReport([string]$title) {
-    $this.Title = $title
-    $this.Id = ([guid]::NewGuid().ToString())
-    $this.Status = $false
-    $this.Steps = @()
-    $this.Categories = @("port", "http", "https") # Лучше брать из $global:supportTestTypes
-  }
-
-  # Добавление теста
-  # 1. **`name`**: Название теста (обычно соответствует имени функции или метода).
-  # 2. **`status`**: Статус теста (например, `passed`, `failed`, `skipped`).
-  # 3. **`startTime` / `endTime`**: Время начала и окончания теста для расчёта `duration`.
-  # 4. **`logs`**: Собрание логов (`log entries`), где каждый элемент содержит:
-  #    - **`message`**: Заметка/сообщение.
-  #    - **`level``:** Класс сообщения (например, `INFO`, `ERROR`).
-  # 5. **`id`**: Уникальный идентификатор теста (часто формируется из имена функции/метода или UUID).
-  # 6. **`category` / `categories` (опционально)**: Группировка по функциональным областим или процессам (可选，通常 добавляется производителем для отчетного 
-  #  разделения).
-  [void]AddStep(
-    [string]$name, 
-    [bool]$passed,
-    [DateTime]$startTime,
-    [DateTime]$endTime,
-    [string]$message,
-    [string]$category
-  ) {
-    $this.Status = $passed
-    # duration в секундах
-    $duration = ($endTime - $startTime)
-
-    $logs = @{
-      "message" = $message
-      "level"   = "INFO"
-    }
-
-    $step = @{
-      name      = $name
-      id        = $category + " / " + $name 
-      passed    = $passed
-      startTime = $startTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-      endTime   = $endTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-      duration  = $duration.TotalSeconds
-      logs      = $logs
-      category  = $category
-    }
-
-    $this.Steps += $step  # добавляем шаг в список
-
-    if (-not $passed) {
-      # Фейлим общий результат, если хотя бы один шаг не прошел.
-      $this.Status = $false
-    }
-  }
-
-  [string] ExportToJson() {
-    return $this | ConvertTo-Json -Depth 10
-  }
-}
-
-# ________________________________ Отчет Markdown ________________________________________
+# ________________________________ Отчет ________________________________________
 
 # Создание файла отчета
 try {
@@ -175,7 +103,6 @@ $Text
 }
 
 # Дозапись данных в файл отчета - Исходный Код
-
 function addShellPart2Report {
   param (
     [Parameter(Mandatory = $true)]
@@ -225,63 +152,154 @@ function finishReport {
 
 }
 
+# Объединение 2х конфигураций тестирования
+function mergeTestConfigs {
+  param (
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [hashtable]$config1,
+
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [hashtable]$config2
+  )
+
+  [hashtable]$merged = @{}  # Итоговая конфигурация
+
+  # Объединяем ключи
+  [array]$mergedKeys = $config1.Keys + $config2.Keys | Sort-Object -Unique
+
+  # Предупреждаем если значения не входят в поддерживаемые типы
+  foreach ($key in $mergedKeys) {
+    if ($global:supportTestTypes -notcontains $key) {
+      Write-Host "Warning: Ключ '$key' не поддерживается. Поддерживаемые ключи: $($global:supportTestTypes -join ', ')" -ForegroundColor Yellow
+    }
+  }
+
+
+  # Перебираем ключи
+  foreach ($key in $mergedKeys) {
+    # Проверяем наличие ключа в обеих конфигурациях
+    $val1 = $config1[$key]
+    $val2 = $config2[$key]
+
+    if ($null -ne $val1 -and $null -ne $val2) {
+
+      $mergedList = New-Object System.Collections.Generic.List[object]
+      $mergedList.AddRange($val1)
+      $mergedList.AddRange($val2)
+      $merged[$key] = $mergedList
+
+    }
+    elseif ($null -ne $val1) {
+      $merged[$key] = $val1
+    }
+    else {
+      $merged[$key] = $val2
+    }
+  }
+
+  return $merged
+}
+
+# Подготовка конфигурации по главному имени хоста
+# Возврат - конфигурация тестов
+function prepareConfigByHostName {
+  param (
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [hashtable]$envConfig, # Полная конфигурация тестирования сетевой связанности
+
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [string]$HostName             # Имя хоста
+  )
+
+  $tests = @{}     # Коллекция тестов key:value
+
+  # Проверяем наличие ключа Хоста
+  if (-not ($envConfig.ContainsKey($HostName))) {
+    return $tests
+  }
+
+  # Проверяем наличие ключа services
+  if ($envConfig."$HostName".ContainsKey("services")) {
+    # Берем блок services
+    $tests = $envConfig."$HostName".services
+    # Перебираем тесты
+    addTextPart2Report -text "Тест сопоставлен по  имени $HostName, добавлен блок services $($tests.Count) элементов" > $null
+  }
+
+
+  # Добавляем тесты из блока serviceGroups
+  if ($envConfig."$HostName".ContainsKey("serviceGroups")) {
+    foreach ($serviceGroupName in $envConfig."$HostName".serviceGroups.Keys) {
+      # Проверяем наличие ключа _serviceGroups_
+      if ( -not ($envConfig.ContainsKey("_serviceGroups_"))) {
+        addTextPart2Report -text "## Что то не то с конфигурацией тестирования"
+        finishReport -text "Блок _serviceGroups_ не найден в конфигурации."
+      }
+      # Проверяем наличие ключа serviceGroupName
+      if ($envConfig._serviceGroups_.ContainsKey($serviceGroupName)) {
+        # Непосредственно добавляем тесты из блока serviceGroups
+        $tests = mergeTestConfigs -config1 $tests -config2 ( $envConfig._serviceGroups_."$serviceGroupName" )
+        addTextPart2Report -text "Тест сопоставлен по  имени $HostName, добавлен блок serviceGroups, итого $($tests.Count) элементов" > $null
+      }
+      else {
+        addTextPart2Report -text "## Что то не то с конфигурацией тестирования"
+        finishReport -text "Конфигурация _serviceGroups_ найдена, но сервис группа $serviceGroupName не найдена."
+      }
+    }
+  }
+  
+
+
+  # Возвращаем найденные тесты или пустой массив
+  return $tests
+
+}
+
 
 # Отбор необходимого теста по имени хоста
-function selectTestsByHost {
+function selectConnectivityTests {
   param (
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
     [object]$envConfig            # Полная конфигурация окружения
   )
 
-  $tests = @()
+  [hashtable]$tests = @{}    # Коллекция тестов
 
   # Сопоставляем по главному имени хоста
-  if ($envConfig.ContainsKey($localHostName)) {
-    if ($envConfig."$localHostName".ContainsKey("services")) {
-      $tests = $envConfig."$localHostName".services
-      addTextPart2Report -text "Тест сопоставлен по главному имени $localHostName"
-      return $tests
-    }
-    else {
-      addTextPart2Report -text "## Что то не то с конфигурацией окружения"
-      finishReport -text "Хост $localHostName найден, но ключ *.services* не найден."
-    }
-  }
+  $tests = prepareConfigByHostName -envConfig $envConfig -HostName $localHostName
+  if ($tests.count -gt 0) { return $tests } # Если тесты найдены, то возвращаем их
 
 
   # Сопоставляем по алиасам, перебираем хосты с ними
+  # Перебираем все хосты в конфигурации
   foreach ($configHost in $envConfig.Keys) {
-    if ($envConfig."$configHost".ContainsKey("alias")) {
-      # Перебираем алиасы
-      foreach ($alias in $envConfig."$configHost".alias) {
-        if ($alias -eq $localHostName) {
-          if ($envConfig."$configHost".ContainsKey("services")) {
-            $tests = $envConfig."$configHost".services
-            addTextPart2Report -text "Тест сопоставлен по алиасу $alias для хоста $configHost" > $null
-            return $tests
-          }
-          else {
-            addTextPart2Report -text "## Что то не то с конфигурацией окружения"
-            finishReport -text "Конфигурация $configHost найдена, алиас $alias совпадает с хостом $localHostName, но ключ *.services* не найден."
-          }
-        }
+    if (-not ($envConfig."$configHost".ContainsKey("alias"))) {
+      continue # Если алиасов нет, то пропускаем
+    }
+
+    # Перебираем алиасы для обрабатываемого хоста
+    foreach ($alias in $envConfig."$configHost".alias) {
+      if ($alias -eq $localHostName) {
+        addTextPart2Report -text "Тест сопоставлен по алиасу $alias для хоста $configHost" > $null
+        $tests = prepareConfigByHostName -envConfig $envConfig -HostName $configHost
+        if ($tests.count -gt 0) { return $tests } # Если тесты найдены, то возвращаем их
       }
     }
     
   }
 
+
+
   # Отдаем дефолтные тесты, если они есть.
   if ($envConfig.ContainsKey("_default_")) {
-    if ($envConfig._default_.ContainsKey("services")) {
-      $tests = $envConfig._default_.services
-      addTextPart2Report -text "Выбран **_default_** тест"
-      return $tests
-    }
-    else {
-      addTextPart2Report -text "## Что то не то с конфигурацией окружения"
-      finishReport -text "_default_ конфигурация найдена для $localHostName, но ключ *.services* не найден."
-    }
+    $tests = prepareConfigByHostName -envConfig $envConfig -HostName "_default_"
+    addTextPart2Report -text "Выбран **_default_** тест"
+    if ($tests.count -gt 0) { return $tests } # Если тесты найдены, то возвращаем их
   }
 
 
@@ -303,15 +321,12 @@ function resolveAllDNSNames {
 
   addTextPart2Report -text "## Разрешение DNS имен" > $null
 
-  $dnsNames = @()
+  [array]$dnsNames = @()  # Массив для хранения DNS имен
 
   # Перебираем типы тестов и получаем все DNS имена
-  foreach ($testName in $global:supportTestTypes) {
-    if ($ConnectTests.ContainsKey($testName)) {
-      foreach ($test in $ConnectTests.$testName) {
-        $dnsNames += $test.Keys
-      }
-      
+  foreach ($testTypeName in $global:supportTestTypes) {
+    foreach ($test in $ConnectTests.$testTypeName) {
+      $dnsNames += $test.Keys
     }
   }
 
@@ -350,51 +365,53 @@ function checkOpenPorts {
   addTextPart2Report -text "## Проверки по TCP портам" > $null
 
   $testElements = @()   # Массив элементов для теста
-
-  if ($ConnectTests.ContainsKey("port")) {
-    # Превращаем тесты в список
-    foreach ($testElement in $ConnectTests.port) {
-      foreach ($values in $testElement.Values) {
-        # Поочереди добавляем в массив
-        foreach ($value in $values) {
-          $testElements += "$($testElement.Keys)" + ":" + "$value"
-        }  
-      }
+  
+  # Проверяем наличие ключа port
+  if (-not $ConnectTests.port) {
+    addTextPart2Report -text "Нет элементов типа __port__" > $null
+    return
+  }
+  
+  # Превращаем тесты в список
+  foreach ($testElement in $ConnectTests.port) {
+    foreach ($values in $testElement.Values) {
+      # Поочереди добавляем в массив
+      foreach ($value in $values) {
+        $testElements += "$($testElement.Keys)" + ":" + "$value"
+      }  
     }
-    # Перебираем тесты
-    foreach ($testElement in $testElements) {
-      # Разделяем на хост и порт
-      $HostName, $port = $testElement -split ":"
+  }
+  # Перебираем тесты
+  foreach ($testElement in $testElements) {
+    # Разделяем на хост и порт
+    $HostName, $port = $testElement -split ":"
       
-      # Проверяем доступность порта
-      try {
-        $tcpClient = New-Object System.Net.Sockets.TcpClient
-        $task = $tcpClient.ConnectAsync($HostName, $port)
-        if ($task.Wait($global:tcpTimeout)) {
-          if ($task.IsFaulted) {
-            addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (ошибка подключения)" > $null
-          }
-          else {
-            addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Open" > $null
-          }
+    # Проверяем доступность порта
+    try {
+      $tcpClient = New-Object System.Net.Sockets.TcpClient
+      $task = $tcpClient.ConnectAsync($HostName, $port)
+      if ($task.Wait($global:tcpTimeout)) {
+        if ($task.IsFaulted) {
+          addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (ошибка подключения)" > $null
         }
         else {
-          addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (таймаут)" > $null
+          addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Open" > $null
         }
       }
-      catch {
-        addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (исключение: $($_.Exception.Message))" > $null
-      }
-      finally {
-        if ($tcpClient) { $tcpClient.Close() }
+      else {
+        addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (таймаут)" > $null
       }
     }
+    catch {
+      addTextPart2Report -text "- Host: $HostName TCP Port: $port, Status: Closed (исключение: $($_.Exception.Message))" > $null
+    }
+    finally {
+      if ($tcpClient) { $tcpClient.Close() }
+    }
+  }
 
 
-  }
-  else {
-    addTextPart2Report -text "Нет элементов типа __port__" > $null
-  }
+
   
 }
 
@@ -408,31 +425,33 @@ function checkHTTP {
 
   addTextPart2Report -text "## Проверки по http" > $null
 
-  if ($ConnectTests.ContainsKey("http")) {
-    foreach ($testElement in $ConnectTests.http) {
-      foreach ($values in $testElement.Values) {
-        foreach ($value in $values) {
-          $url = "http://" + "$($testElement.Keys)" + ":" + "$value"
-          try {
-            $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec $($global:tcpTimeout / 1000)
-            # Проверяем код ответа 2xx или 3xx - успешный
-            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
-              addTextPart2Report -text "- HTTP: $url, Status: OK (код: $($response.StatusCode))" > $null
-            }
-            else {
-              addTextPart2Report -text "- HTTP: $url, Status: Failed (код: $($response.StatusCode))" > $null
-            }
+  if (-not $ConnectTests.http) {
+    addTextPart2Report -text "Нет элементов типа __http__" > $null
+    return
+  }
+
+
+  foreach ($testElement in $ConnectTests.http) {
+    foreach ($values in $testElement.Values) {
+      foreach ($value in $values) {
+        $url = "http://" + "$($testElement.Keys)" + ":" + "$value"
+        try {
+          $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec $($global:tcpTimeout / 1000)
+          # Проверяем код ответа 2xx или 3xx - успешный
+          if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+            addTextPart2Report -text "- HTTP: $url, Status: OK (код: $($response.StatusCode))" > $null
           }
-          catch {
-            addTextPart2Report -text "- HTTP: $url, Status: Error (исключение: $($_.Exception.Message))" > $null
+          else {
+            addTextPart2Report -text "- HTTP: $url, Status: Failed (код: $($response.StatusCode))" > $null
           }
+        }
+        catch {
+          addTextPart2Report -text "- HTTP: $url, Status: Error (исключение: $($_.Exception.Message))" > $null
         }
       }
     }
   }
-  else {
-    addTextPart2Report -text "Нет элементов типа __http__" > $null
-  }
+
 }
 
 # Проверки по https
@@ -445,96 +464,42 @@ function checkHTTPS {
 
   addTextPart2Report -text "## Проверки по https" > $null
 
-  if ($ConnectTests.ContainsKey("https")) {
-    foreach ($testElement in $ConnectTests.https) {
-      foreach ($values in $testElement.Values) {
-        foreach ($value in $values) {
-          $url = "https://" + "$($testElement.Keys)" + ":" + "$value"
-          try {
-            $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec $($global:tcpTimeout / 1000)
-            # Проверяем код ответа 2xx или 3xx - успешный
-            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
-              addTextPart2Report -text "- HTTPS: $url, Status: OK (код: $($response.StatusCode))" > $null
-            }
-            else {
-              addTextPart2Report -text "- HTTPS: $url, Status: Failed (код: $($response.StatusCode))" > $null
-            }
+  # Проверяем наличие ключа https
+  if (-not $ConnectTests.https) {
+    addTextPart2Report -text "Нет элементов типа __https__" > $null
+    return
+  }
+
+  # перебираем тесты
+  foreach ($testElement in $ConnectTests.https) {
+    foreach ($values in $testElement.Values) {
+      foreach ($value in $values) {
+        $url = "https://" + "$($testElement.Keys)" + ":" + "$value"
+        try {
+          $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec $($global:tcpTimeout / 1000)
+          # Проверяем код ответа 2xx или 3xx - успешный
+          if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+            addTextPart2Report -text "- HTTPS: $url, Status: OK (код: $($response.StatusCode))" > $null
           }
-          catch {
-            addTextPart2Report -text "- HTTPS: $url, Status: Error (исключение: $($_.Exception.Message))" > $null
+          else {
+            addTextPart2Report -text "- HTTPS: $url, Status: Failed (код: $($response.StatusCode))" > $null
           }
+        }
+        catch {
+          addTextPart2Report -text "- HTTPS: $url, Status: Error (исключение: $($_.Exception.Message))" > $null
         }
       }
     }
   }
-  else {
-    addTextPart2Report -text "Нет элементов типа __https__" > $null
-  }
 
 }
-
-# ________________________________  Режимы работы _____________________________________
-
-function MarkdownMode {
-
-  # Запись заголовка отчета в MD
-  addTextPart2Report -text $reportHeader > $null
-
-  # Поиск тестов по Имени хоста или Алиасам
-  $ConnectTests = selectTestsByHost -envConfig $envConfig
-
-  # Найдены тесты
-  addTextPart2Report -text "## Тесты" > $null
-  $ConnectTestsString = $ConnectTests | ConvertTo-Yaml
-  addShellPart2Report -shell "$ConnectTestsString" > $null
-
-  # Разрешение всех DNS Имен в Тестах
-  resolveAllDNSNames -ConnectTests $ConnectTests > $null
-
-  # Проверка открытых портов
-  checkOpenPorts -ConnectTests $ConnectTests > $null
-
-  # Проверка по http протоколу
-  checkHTTP -ConnectTests $ConnectTests > $null
-
-  # Проверка по https протоколу
-  checkHTTPS -ConnectTests $ConnectTests > $null
-
-  # Завершение отчета
-  finishReport > $null
-
-}
-
-function AllureMode {
-
-  # Создание обьекта отчета 
-
-
-  # Поиск тестов по Имени хоста или Алиасам
-
-
-  # Разрешение всех DNS Имен в Тестах
-
-
-  # Проверка открытых портов
-
-
-  # Проверка по http протоколу
-
-
-  # Проверка по https протоколу
-
-
-  # Запись отчета
-
-} 
 
 
 # ______________________________ Основная логика _______________________________
 
-# Чтение файла конфигурации
+# Чтение файла конфигурации и преобразование в объект
 try {
-  $envConfig = Get-Content -Path $EnvironmentConfigFilePath -Raw -ErrorAction Stop | ConvertFrom-Yaml
+  [hashtable]$envConfig = Get-Content -Path $EnvironmentConfigFilePath -Raw -ErrorAction Stop | ConvertFrom-Yaml
 }
 catch {
   Write-Host "Error: Не удалось прочитать файл конфигурации $($EnvironmentConfigFilePath)!" -ForegroundColor "Red"
@@ -542,13 +507,38 @@ catch {
   exit 1 # Выходим с ошибкой
 }
 
-
-if ($ReportType = "Markdown") {
-  MarkdownMode > $null
-}
+# Возможно стоит проверить наличие всех используемых сервисов в конфигурации.
 
 
-if ($ReportType = "Allure") {
-  AllureMode > $null
-}
+# Запись заголовка отчета
+addTextPart2Report -text $reportHeader > $null
 
+
+# Поиск тестов по Имени хоста или Алиасам
+$ConnectTests = selectConnectivityTests -envConfig $envConfig
+
+# Найдены тесты
+addTextPart2Report -text "## Тесты" > $null
+$ConnectTestsString = $ConnectTests | ConvertTo-Yaml
+addShellPart2Report -shell "$ConnectTestsString" > $null
+
+
+
+# Разрешение всех DNS Имен в Тестах
+resolveAllDNSNames -ConnectTests $ConnectTests > $null
+
+
+# Проверка открытых портов
+checkOpenPorts -ConnectTests $ConnectTests > $null
+
+
+# Проверка по http протоколу
+checkHTTP -ConnectTests $ConnectTests > $null
+
+
+# Проверка по https протоколу
+checkHTTPS -ConnectTests $ConnectTests > $null
+
+
+# Завершение отчета
+finishReport > $null
